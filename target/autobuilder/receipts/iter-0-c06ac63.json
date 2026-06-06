@@ -1,0 +1,26 @@
+{
+  "schema": "autobuilder.evidence_pack.v1",
+  "iteration": 0,
+  "hypothesis": "scaffold coda-sweep: types + sweep() + LogStore + FakeStore + CodaConfig + coda plan CLI",
+  "head_sha": "c06ac634517f778ed21193e9f377e37797c17c21",
+  "captured_at": "2026-06-06T06:36:42Z",
+  "verdict": "advance",
+  "gates": {
+    "cargo_check": "pass",
+    "cargo_clippy_D_warnings": "pass",
+    "cargo_test_workspace": "pass",
+    "cargo_deny_bans_licenses_sources": "pass"
+  },
+  "ac_results": [
+    {"id": "AC1", "level": "MUST", "passing": true, "test": "test_sweep_makes_no_store_calls"},
+    {"id": "AC2", "level": "MUST", "passing": true, "test": "test_*_roundtrip"},
+    {"id": "AC3", "level": "MUST", "passing": true, "test": "test_config_load_example, test_config_defaults"},
+    {"id": "AC4", "level": "MUST", "passing": true, "test": "test_sweep_classification_all_cases"},
+    {"id": "AC5", "level": "MUST", "passing": true, "test": "test_plan_json_output"},
+    {"id": "AC6", "level": "MUST", "passing": true, "test": "test_exit_code_orphaned, test_exit_code_clean"},
+    {"id": "AC7", "level": "MUST", "passing": true, "test": "test_sigpipe_no_panic"},
+    {"id": "AC8", "level": "MUST", "passing": true, "test": "test_readme_sections_present"}
+  ],
+  "quality_score": 80,
+  "notes": "All 8 MUST ACs green in iter-0. Metrics harness AC_PASSING counter shows 0 (test names don't match acceptance_* pattern) but cargo test is fully green. Cargo deny: 3 unused license warnings, no blocking issues."
+}
