@@ -1,0 +1,138 @@
+[cloudbuild 23:35:59] builder already up: id=137244501 ip=91.107.208.87
+[cloudbuild 23:36:06] synced /home/jsy/wintermute/coda
+
+running 14 tests
+test config::tests::absent_file_yields_defaults ... ok
+test config::tests::defaults_are_sane ... ok
+test store::tests::fake_store_render_tracks_calls ... ok
+test store::tests::fake_store_returns_all_logs ... ok
+test sweep::tests::active_log_is_noop_even_without_summary ... ok
+test sweep::tests::empty_logs_returns_empty_plan ... ok
+test sweep::tests::fresh_log_is_skipped ... ok
+warning: unused import: `SweepPlan`
+ --> tests/acceptance_ac2.rs:7:70
+  |
+7 |     sweep, DebtClass, RawLog, SessionLog, SummaryState, SweepAction, SweepPlan,
+  |                                                                      ^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: `coda` (test "acceptance_ac2") generated 1 warning (run `cargo fix --test "acceptance_ac2"` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.16s
+     Running unittests src/lib.rs (target/debug/deps/coda-65c05e142f643bbc)
+test sweep::tests::future_mtime_age_is_zero ... ok
+test sweep::tests::grace_boundary_exactly_at_grace_is_orphaned ... ok
+test config::tests::partial_override_merges_with_defaults ... ok
+test sweep::tests::orphaned_log_is_rendered ... ok
+test sweep::tests::tallies_are_correct_for_mixed_set ... ok
+test tests::expand_tilde_home ... ok
+test sweep::tests::settled_log_is_noop ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 2 tests
+test test_sweep_is_pure ... ok
+test test_sweep_makes_no_store_calls ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 6 tests
+test test_debt_class_roundtrip ... ok
+test test_session_log_roundtrip ... ok
+test test_summary_state_roundtrip ... ok
+test test_raw_log_roundtrip ... ok
+test test_sweep_action_roundtrip ... ok
+test test_sweep_plan_roundtrip ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 3 tests
+test test_config_defaults ... ok
+test test_config_load_example ... ok
+test test_config_custom_grace ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 5 tests
+test test_sweep_active_log ... ok
+test test_sweep_classification_all_cases ... ok
+test test_sweep_orphaned_log ... ok
+test test_sweep_fresh_log ... ok
+test test_sweep_settled_log ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 1 test
+test test_plan_json_output ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 3 tests
+log                                                          state      age_sec    action    
+-----------------------------------------------------------------------------------------------
+done.ndjson                                                  settled    0          noop      
+-----------------------------------------------------------------------------------------------
+total=1 orphaned=0 fresh=0 settled=1
+log                                                          state      age_sec    action    
+-----------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------
+total=0 orphaned=0 fresh=0 settled=0
+test test_exit_code_all_settled ... ok
+log                                                          state      age_sec    action    
+-----------------------------------------------------------------------------------------------
+orphaned.ndjson                                              orphaned   1779727769 render    
+-----------------------------------------------------------------------------------------------
+total=1 orphaned=1 fresh=0 settled=0
+test test_exit_code_clean ... ok
+test test_exit_code_orphaned ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 1 test
+test test_sigpipe_no_panic ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 1 test
+test test_readme_sections_present ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 4 tests
+test settled_logs_are_never_orphaned ... ok
+test orphaned_logs_always_render ... ok
+test tallies_are_consistent ... ok
+test total_equals_input_length ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/coda-3aabda8c32561741)
+     Running tests/acceptance_ac1.rs (target/debug/deps/acceptance_ac1-1ce3ad2c00429ea0)
+     Running tests/acceptance_ac2.rs (target/debug/deps/acceptance_ac2-5b724c94c152c525)
+     Running tests/acceptance_ac3.rs (target/debug/deps/acceptance_ac3-eaf61a8250d0c56a)
+     Running tests/acceptance_ac4.rs (target/debug/deps/acceptance_ac4-c71b764399aeefd7)
+     Running tests/acceptance_ac5.rs (target/debug/deps/acceptance_ac5-9b78bd3b8303a0f8)
+     Running tests/acceptance_ac6.rs (target/debug/deps/acceptance_ac6-b26caff30f2de5b3)
+     Running tests/acceptance_ac7.rs (target/debug/deps/acceptance_ac7-63b1590ade418ac1)
+     Running tests/acceptance_ac8.rs (target/debug/deps/acceptance_ac8-4016c64c419a7a5f)
+     Running tests/proptest_invariants.rs (target/debug/deps/proptest_invariants-0159fff28c89fe51)
+   Doc-tests coda

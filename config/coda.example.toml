@@ -1,0 +1,8 @@
+# coda configuration — copy to ~/.config/coda/coda.toml and adjust.
+#
+# grace_secs: missing-summary logs younger than this are Fresh (the SessionEnd
+# hook may still fire). Older than this are Orphaned (real debt; render them).
+grace_secs = 120
+
+# sessions_dir: where ctrace writes *.ndjson session logs.
+sessions_dir = "/home/jsy/.cache/ctrace/sessions"

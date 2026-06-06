@@ -1,0 +1,123 @@
+{
+  "schema": "autobuilder.intent_card.v1",
+  "prd_source": "/home/jsy/wintermute/autobuilder/PRD-coda-sweep.md",
+  "intent_slug": "coda-sweep",
+  "root_motivation": "ctrace session logs accumulate unrendered summaries because headless timer ticks are SIGKILLed by cgroup teardown before the SessionEnd hook fires. 623 of 1874 logs (33%) have no summary. There is no typed model of which logs are in debt, how old the debt is, or what to do about each. coda-sweep creates the corpus repo, shared types, and a pure sweep() function so subsequent sibling PRDs (coda-audit, coda-close) have a contract to extend.",
+  "user_persona": "Joe Yen running daily self-review on this laptop; coda plan is a dashboard showing summary-debt at a glance, piped to head or jq without panicking.",
+  "unfakeable_metric": {
+    "name": "acceptance_tests_passing_count",
+    "lower_is_better": false,
+    "harness_command": "cargo test --workspace --no-fail-fast 2>&1 | grep -c 'test .* ... ok'",
+    "target": 8
+  },
+  "acceptance_criteria": [
+    {
+      "id": "AC1",
+      "level": "MUST",
+      "description": "cargo build and cargo test succeed offline; a test asserts sweep makes zero store calls (operates only on passed &[RawLog] + active-log path + injected now/grace).",
+      "test": "tests/acceptance_ac1.rs — test_sweep_makes_no_store_calls"
+    },
+    {
+      "id": "AC2",
+      "level": "MUST",
+      "description": "SessionLog, SummaryState, DebtClass, SweepAction, SweepPlan are public and serde-(de)serializable; a round-trip test covers each.",
+      "test": "tests/acceptance_ac2.rs — test_types_roundtrip_serde"
+    },
+    {
+      "id": "AC3",
+      "level": "MUST",
+      "description": "CodaConfig::load parses config/coda.example.toml yielding expected grace_secs + sessions_dir; absent file yields documented defaults.",
+      "test": "tests/acceptance_ac3.rs — test_config_load_example and test_config_defaults"
+    },
+    {
+      "id": "AC4",
+      "level": "MUST",
+      "description": "sweep classifies correctly: active-log path → Active + NoOp (even if summary missing); missing-summary log younger than grace → Fresh + Skip; missing-summary log older than grace → Orphaned + Render; log with summary → Settled + NoOp.",
+      "test": "tests/acceptance_ac4.rs — test_sweep_classification_all_cases"
+    },
+    {
+      "id": "AC5",
+      "level": "MUST",
+      "description": "coda plan --format json emits one entry per log plus SweepPlan tallies (orphaned/fresh/settled/total); schema matches documented SweepPlan.",
+      "test": "tests/acceptance_ac5.rs — test_plan_json_output"
+    },
+    {
+      "id": "AC6",
+      "level": "MUST",
+      "description": "coda plan exits non-zero when >=1 log is Orphaned, zero when none are; covered by two integration cases.",
+      "test": "tests/acceptance_ac6.rs — test_exit_code_orphaned and test_exit_code_clean"
+    },
+    {
+      "id": "AC7",
+      "level": "MUST",
+      "description": "coda plan | head -1 does not panic (SIGPIPE reset verified by a test that closes the read end early).",
+      "test": "tests/acceptance_ac7.rs — test_sigpipe_no_panic"
+    },
+    {
+      "id": "AC8",
+      "level": "MUST",
+      "description": "README documents the config format, the type surface, and the LogStore trait so coda-audit/coda-close/coda-boot have a contract to extend.",
+      "test": "tests/acceptance_ac8.rs — test_readme_sections_present"
+    }
+  ],
+  "scope": [
+    "Shared Rust types: SessionLog, SummaryState, DebtClass, SweepAction, SweepPlan, RawLog",
+    "LogStore trait abstracting the sessions directory",
+    "FakeStore for in-memory test fixtures",
+    "Pure sweep(logs, active_log, now, grace) function",
+    "CodaConfig::load from ~/.config/coda/coda.toml with defaults",
+    "coda plan subcommand: table output + --format json",
+    "Exit code semantics: non-zero when any Orphaned log exists"
+  ],
+  "non_goals": [
+    "No --apply flag or actual rendering of summaries (that is coda-close)",
+    "No FsStore reading real ~/.cache/ctrace/sessions/ (that is coda-audit)",
+    "No scheduling, daemon mode, or watch loop",
+    "No integration with agorabus or any external bus",
+    "No migration or repair of existing bad summaries"
+  ],
+  "hard_constraints": {
+    "rust_edition": "2021",
+    "target_kind": "cli",
+    "deny_unsafe": true,
+    "max_deps": 8,
+    "msrv": "1.85",
+    "additional": {
+      "no_let_chains": "MSRV 1.85 — no let-chains; use nested if-let or match instead",
+      "sigpipe_reset": "sigpipe::reset() must be first line of main()"
+    }
+  },
+  "five_whys_trace": [
+    {
+      "why": 1,
+      "q": "Why do 623 ctrace logs have no summary?",
+      "a": "The SessionEnd hook fires the scribe render command, but headless timer ticks are SIGKILLed by cgroup teardown before the hook runs."
+    },
+    {
+      "why": 2,
+      "q": "Why hasn't this been fixed systematically?",
+      "a": "There is no model of the debt — which logs need summaries, how old they are, what to do about each. Self-review re-derives the gap by hand each time and runs scribe backfill inconsistently."
+    },
+    {
+      "why": 3,
+      "q": "Why isn't there a model of the debt?",
+      "a": "No typed, testable representation has been built. The information is scattered: ndjson file count vs summary.md count, ctrace-scribe README notes, open docket item ctrace-sessionend-flake."
+    },
+    {
+      "why": 4,
+      "q": "Why does the model need to be typed and testable before anything else?",
+      "a": "relay/concord/quicken/keel/anchor all failed when extend PRDs started without a shipped corpus repo. The classification logic, the type surface, and the LogStore trait must be immutable contracts before coda-audit and coda-close can extend them safely."
+    }
+  ],
+  "ambiguities_resolved": [
+    {
+      "question": "What is the signal for Active vs Settled vs Orphaned — does NDJSON have an end marker?",
+      "resolution": "Graceful logs don't carry an end marker either. Signal is purely: (a) path matches the active ctrace log, (b) .summary.md exists, (c) mtime age vs grace threshold. No NDJSON parsing needed."
+    },
+    {
+      "question": "Does FakeStore need to implement LogStore::render?",
+      "resolution": "render is part of the trait but is unused in coda-sweep (no --apply). FakeStore::render can return Ok(()) unconditionally. The trait exists for coda-close to implement."
+    }
+  ],
+  "created_at": "2026-06-05T00:00:00Z"
+}
