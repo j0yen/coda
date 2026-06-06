@@ -4,6 +4,7 @@
 //!
 //! ```text
 //! coda plan [--format table|json] [--sessions-dir <path>] [--grace-secs <n>]
+//! coda audit [--format table|json] [--sessions-dir <path>] [--grace-secs <n>] [--verbose] [--orphaned-only]
 //! ```
 //!
 //! Exit code: 1 when at least one log is `Orphaned`, 0 otherwise.
@@ -13,7 +14,7 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
 
-use coda::{sweep, CodaConfig, RawLog, SweepAction};
+use coda::{resolver, sweep, CodaConfig, FsStore, LogStore, RawLog, SweepAction};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -30,6 +31,8 @@ struct Cli {
 enum Commands {
     /// Show the sweep plan: classify all session logs and print a table or JSON.
     Plan(PlanArgs),
+    /// Scan sessions dir, classify via sweep, and report summary debt (read-only).
+    Audit(AuditArgs),
 }
 
 #[derive(clap::Args, Debug)]
@@ -47,6 +50,29 @@ struct PlanArgs {
     grace_secs: Option<u64>,
 }
 
+#[derive(clap::Args, Debug)]
+struct AuditArgs {
+    /// Output format (ignored when --orphaned-only is set).
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+    format: OutputFormat,
+
+    /// Override the sessions directory from config.
+    #[arg(long)]
+    sessions_dir: Option<PathBuf>,
+
+    /// Override the grace period (seconds) from config.
+    #[arg(long)]
+    grace_secs: Option<u64>,
+
+    /// Print per-log details in table output.
+    #[arg(long)]
+    verbose: bool,
+
+    /// Print only orphaned log paths, one per line (for piping to coda-close).
+    #[arg(long)]
+    orphaned_only: bool,
+}
+
 #[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
 enum OutputFormat {
     Table,
@@ -54,7 +80,8 @@ enum OutputFormat {
 }
 
 fn main() -> ExitCode {
-    // SIGPIPE reset must be first: `coda plan | head` must not panic.
+    // SIGPIPE reset must be first: `coda plan | head` and `coda audit --orphaned-only | head`
+    // must not panic.
     // Safety: this crate sets deny(unsafe_code); sigpipe::reset() is safe.
     #[allow(unused_must_use)]
     {
@@ -64,6 +91,7 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
     match cli.command {
         Commands::Plan(args) => run_plan(args),
+        Commands::Audit(args) => run_audit(args),
     }
 }
 
@@ -73,7 +101,9 @@ fn run_plan(args: PlanArgs) -> ExitCode {
         Ok(c) => c,
         Err(e) => {
             #[allow(clippy::print_stderr)]
-            { eprintln!("coda: config error: {e}"); }
+            {
+                eprintln!("coda: config error: {e}");
+            }
             return ExitCode::from(2);
         }
     };
@@ -106,8 +136,65 @@ fn run_plan(args: PlanArgs) -> ExitCode {
     }
 }
 
+fn run_audit(args: AuditArgs) -> ExitCode {
+    let mut cfg = match CodaConfig::load_default() {
+        Ok(c) => c,
+        Err(e) => {
+            #[allow(clippy::print_stderr)]
+            {
+                eprintln!("coda: config error: {e}");
+            }
+            return ExitCode::from(2);
+        }
+    };
+
+    if let Some(dir) = args.sessions_dir {
+        cfg.sessions_dir = dir;
+    }
+    if let Some(grace) = args.grace_secs {
+        cfg.grace_secs = grace;
+    }
+
+    // Use FsStore for the real sessions directory.
+    let store = FsStore::new(cfg.sessions_dir.clone());
+    let raw_logs = match store.logs() {
+        Ok(l) => l,
+        Err(e) => {
+            #[allow(clippy::print_stderr)]
+            {
+                eprintln!("coda audit: store error: {e}");
+            }
+            return ExitCode::from(2);
+        }
+    };
+
+    // Resolve the active log (shells ctrace status; returns None if not running).
+    let active_log = resolver::resolve_active_log();
+    let active_log_ref = active_log.as_deref();
+
+    let now = now_secs();
+    let plan = sweep(&raw_logs, active_log_ref, now, cfg.grace_secs);
+
+    if args.orphaned_only {
+        print_orphaned_only(&plan);
+    } else {
+        match args.format {
+            OutputFormat::Table => print_audit_table(&plan, args.verbose),
+            OutputFormat::Json => print_json(&plan),
+        }
+    }
+
+    if plan.orphaned > 0 {
+        ExitCode::from(1)
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
 /// Enumerate `.ndjson` files in `dir` (if it exists) as [`RawLog`]s.
 /// Falls back to empty vec on any I/O error.
+///
+/// Used by `coda plan` which predates `FsStore`; kept for backwards compat.
 fn load_logs(dir: &std::path::Path) -> Vec<RawLog> {
     if !dir.is_dir() {
         return vec![];
@@ -147,6 +234,85 @@ fn now_secs() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
+}
+
+/// Print a compact tally line plus, with `verbose`, the per-log table.
+#[allow(clippy::print_stdout)]
+fn print_audit_table(plan: &coda::SweepPlan, verbose: bool) {
+    use std::io::Write;
+    let stdout = std::io::stdout();
+    let mut out = stdout.lock();
+
+    // Find the oldest orphan age.
+    let oldest_orphan = plan
+        .logs
+        .iter()
+        .filter_map(|l| {
+            if let coda::DebtClass::Orphaned { age_secs } = l.debt {
+                Some(age_secs)
+            } else {
+                None
+            }
+        })
+        .max();
+
+    writeln!(
+        out,
+        "{} orphaned, {} fresh, {} settled / {} total",
+        plan.orphaned, plan.fresh, plan.settled, plan.total
+    )
+    .ok();
+
+    if let Some(age) = oldest_orphan {
+        writeln!(out, "oldest orphan: {age}s ago").ok();
+    }
+
+    if verbose {
+        writeln!(
+            out,
+            "\n{:<60} {:<10} {:<10} {:<10}",
+            "log", "state", "age_sec", "action"
+        )
+        .ok();
+        writeln!(out, "{}", "-".repeat(95)).ok();
+        for (log, action) in plan.logs.iter().zip(plan.actions.iter()) {
+            let state = match &log.debt {
+                coda::DebtClass::Active => "active",
+                coda::DebtClass::Fresh { .. } => "fresh",
+                coda::DebtClass::Orphaned { .. } => "orphaned",
+                coda::DebtClass::Settled => "settled",
+            };
+            let action_str = match action {
+                SweepAction::Render { .. } => "render",
+                SweepAction::Skip { .. } => "skip",
+                SweepAction::NoOp { .. } => "noop",
+            };
+            let name = log.path.file_name().map_or_else(
+                || log.path.display().to_string(),
+                |n| n.to_string_lossy().into_owned(),
+            );
+            writeln!(
+                out,
+                "{:<60} {:<10} {:<10} {:<10}",
+                name, state, log.age_secs, action_str
+            )
+            .ok();
+        }
+        writeln!(out, "{}", "-".repeat(95)).ok();
+    }
+}
+
+/// Print only orphaned log paths, one per line.
+#[allow(clippy::print_stdout)]
+fn print_orphaned_only(plan: &coda::SweepPlan) {
+    use std::io::Write;
+    let stdout = std::io::stdout();
+    let mut out = stdout.lock();
+    for log in &plan.logs {
+        if matches!(log.debt, coda::DebtClass::Orphaned { .. }) {
+            writeln!(out, "{}", log.path.display()).ok();
+        }
+    }
 }
 
 fn print_table(plan: &coda::SweepPlan) {

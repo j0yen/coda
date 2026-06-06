@@ -1,9 +1,9 @@
 //! [`LogStore`] trait and its implementations.
 //!
 //! The [`LogStore`] trait abstracts the sessions directory so [`crate::sweep`]
-//! is pure and testable. The real [`FsStore`] that reads from
-//! `~/.cache/ctrace/sessions/` is in coda-audit; this module ships only the
-//! trait and [`FakeStore`] for tests.
+//! is pure and testable. [`FsStore`] is the real filesystem implementation
+//! that walks `~/.cache/ctrace/sessions/`. [`FakeStore`] is the in-memory
+//! fixture store for tests.
 
 use std::path::{Path, PathBuf};
 
@@ -23,8 +23,8 @@ pub struct RawLog {
 /// Abstraction over the sessions directory.
 ///
 /// Implementations:
-/// - [`FakeStore`] — in-memory fixtures for tests (this crate).
-/// - `FsStore` — real filesystem (coda-audit, future crate).
+/// - [`FsStore`] — real filesystem walker over `~/.cache/ctrace/sessions/`.
+/// - [`FakeStore`] — in-memory fixtures for tests.
 pub trait LogStore {
     /// Error type for store operations.
     type Error: std::fmt::Debug + std::fmt::Display;
@@ -45,6 +45,83 @@ pub trait LogStore {
     ///
     /// Returns an error if the render command fails.
     fn render(&self, path: &Path) -> Result<(), Self::Error>;
+}
+
+/// Real filesystem store: walks a sessions directory for `*.ndjson` files.
+///
+/// For each `.ndjson` found it:
+/// - checks whether the sibling `*.summary.md` exists (`has_summary`),
+/// - reads the file's `mtime` as seconds since the Unix epoch (`mtime_secs`).
+///
+/// One directory pass; no per-file content read.
+#[derive(Debug, Clone)]
+pub struct FsStore {
+    /// The sessions directory to walk.
+    pub sessions_dir: PathBuf,
+}
+
+/// Error type for [`FsStore`] operations.
+#[derive(Debug)]
+pub struct FsStoreError(pub String);
+
+impl std::fmt::Display for FsStoreError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "FsStore error: {}", self.0)
+    }
+}
+
+impl std::error::Error for FsStoreError {}
+
+impl FsStore {
+    /// Create a new [`FsStore`] pointing at `sessions_dir`.
+    #[must_use]
+    #[allow(clippy::missing_const_for_fn)] // PathBuf is not const-constructible in MSRV 1.85
+    pub fn new(sessions_dir: PathBuf) -> Self {
+        Self { sessions_dir }
+    }
+}
+
+impl LogStore for FsStore {
+    type Error = FsStoreError;
+
+    fn logs(&self) -> Result<Vec<RawLog>, Self::Error> {
+        if !self.sessions_dir.is_dir() {
+            return Ok(vec![]);
+        }
+        let entries = std::fs::read_dir(&self.sessions_dir)
+            .map_err(|e| FsStoreError(format!("read_dir {}: {e}", self.sessions_dir.display())))?;
+        let mut logs = Vec::new();
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().is_some_and(|e| e == "ndjson") {
+                let mtime_secs = entry
+                    .metadata()
+                    .ok()
+                    .and_then(|m| {
+                        m.modified()
+                            .ok()
+                            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                            .map(|d| d.as_secs())
+                    })
+                    .unwrap_or(0);
+                let summary_path = path.with_extension("summary.md");
+                let has_summary = summary_path.exists();
+                logs.push(RawLog {
+                    path,
+                    has_summary,
+                    mtime_secs,
+                });
+            }
+        }
+        // Sort by path for deterministic output.
+        logs.sort_by(|a, b| a.path.cmp(&b.path));
+        Ok(logs)
+    }
+
+    fn render(&self, _path: &Path) -> Result<(), Self::Error> {
+        // coda-audit is read-only; render is not implemented.
+        Ok(())
+    }
 }
 
 /// In-memory fixture store for tests.

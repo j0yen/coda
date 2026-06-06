@@ -14,19 +14,23 @@
 //!   [`SweepAction`], [`SweepPlan`], [`RawLog`].
 //! - **[`LogStore`] trait** — abstracts the sessions directory so
 //!   [`sweep`] is pure and testable, and so sibling crates share one contract.
+//! - **[`FsStore`]** — real filesystem store over `~/.cache/ctrace/sessions/`.
 //! - **[`FakeStore`]** — in-memory fixture store for tests.
 //! - **[`sweep`]** — pure function that classifies a `&[RawLog]` into a
 //!   [`SweepPlan`]. Zero side effects; no filesystem or network access.
 //! - **[`CodaConfig`]** — loads `~/.config/coda/coda.toml` with sane defaults.
+//! - **[`resolver`]** — active-log resolver: shells `ctrace status` to find the
+//!   currently-open log so it is excluded from debt classification.
 
 use std::path::PathBuf;
 
 pub mod config;
+pub mod resolver;
 pub mod store;
 pub mod sweep;
 
 pub use config::CodaConfig;
-pub use store::{FakeStore, LogStore, RawLog};
+pub use store::{FakeStore, FsStore, FsStoreError, LogStore, RawLog};
 pub use sweep::{sweep, DebtClass, SessionLog, SummaryState, SweepAction, SweepPlan};
 
 /// Default grace period in seconds: 120s (2 minutes).
