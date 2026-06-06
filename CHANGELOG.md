@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.2.0 — 2026-06-06
+
+coda-audit: live read of summary debt
+
+Adds FsStore (real LogStore over ~/.cache/ctrace/sessions/), active-log
+resolver (ctrace status JSON parser), and `coda audit` command with
+--format table|json, --verbose, --orphaned-only flags. 16 integration
+tests; all 8 ACs green; strictly read-only (render call count = 0).
+
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
