@@ -58,6 +58,8 @@ pub trait LogStore {
 pub struct FsStore {
     /// The sessions directory to walk.
     pub sessions_dir: PathBuf,
+    /// Command used to render a log.  Defaults to `"scribe"`.
+    render_cmd_inner: String,
 }
 
 /// Error type for [`FsStore`] operations.
@@ -77,7 +79,25 @@ impl FsStore {
     #[must_use]
     #[allow(clippy::missing_const_for_fn)] // PathBuf is not const-constructible in MSRV 1.85
     pub fn new(sessions_dir: PathBuf) -> Self {
-        Self { sessions_dir }
+        Self {
+            sessions_dir,
+            render_cmd_inner: "scribe".to_string(),
+        }
+    }
+
+    /// The render command basename (or full path).  Defaults to `"scribe"`.
+    /// Override via [`FsStore::with_render_cmd`].
+    #[must_use]
+    #[allow(clippy::missing_const_for_fn)]
+    pub fn render_cmd(&self) -> &str {
+        &self.render_cmd_inner
+    }
+
+    /// Return a new [`FsStore`] with a custom render command.
+    #[must_use]
+    pub fn with_render_cmd(mut self, cmd: impl Into<String>) -> Self {
+        self.render_cmd_inner = cmd.into();
+        self
     }
 }
 
@@ -118,9 +138,32 @@ impl LogStore for FsStore {
         Ok(logs)
     }
 
-    fn render(&self, _path: &Path) -> Result<(), Self::Error> {
-        // coda-audit is read-only; render is not implemented.
-        Ok(())
+    /// Shell out to `<render_cmd> <path>` and return Ok on exit 0.
+    ///
+    /// Expects `<render_cmd>` to write `<path>.summary.md` beside the log.
+    /// Returns `Err` with the stderr output on non-zero exit.
+    fn render(&self, path: &Path) -> Result<(), Self::Error> {
+        let output = std::process::Command::new(&self.render_cmd_inner)
+            .arg("render")
+            .arg(path)
+            .output()
+            .map_err(|e| {
+                FsStoreError(format!(
+                    "failed to run '{}': {e}",
+                    self.render_cmd_inner
+                ))
+            })?;
+
+        if output.status.success() {
+            Ok(())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+            Err(FsStoreError(format!(
+                "'{}' render failed (exit {:?}): {stderr}",
+                self.render_cmd_inner,
+                output.status.code()
+            )))
+        }
     }
 }
 

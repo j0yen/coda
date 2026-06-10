@@ -24,11 +24,15 @@
 
 use std::path::PathBuf;
 
+pub mod boot;
+pub mod close;
 pub mod config;
 pub mod resolver;
 pub mod store;
 pub mod sweep;
 
+pub use boot::{BootInstallArgs, run_boot_install};
+pub use close::{CloseArgs, CloseSummary, run_close};
 pub use config::CodaConfig;
 pub use store::{FakeStore, FsStore, FsStoreError, LogStore, RawLog};
 pub use sweep::{sweep, DebtClass, SessionLog, SummaryState, SweepAction, SweepPlan};

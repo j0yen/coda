@@ -5,6 +5,8 @@
 //! ```text
 //! coda plan [--format table|json] [--sessions-dir <path>] [--grace-secs <n>]
 //! coda audit [--format table|json] [--sessions-dir <path>] [--grace-secs <n>] [--verbose] [--orphaned-only]
+//! coda close [--apply] [--limit N] [--json] [--sessions-dir <path>]
+//! coda boot install [--enable]
 //! ```
 //!
 //! Exit code: 1 when at least one log is `Orphaned`, 0 otherwise.
@@ -14,7 +16,10 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
 
-use coda::{resolver, sweep, CodaConfig, FsStore, LogStore, RawLog, SweepAction};
+use coda::{
+    resolver, sweep, BootInstallArgs, CloseArgs, CodaConfig, FsStore, LogStore, RawLog,
+    SweepAction, run_boot_install, run_close,
+};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -33,6 +38,45 @@ enum Commands {
     Plan(PlanArgs),
     /// Scan sessions dir, classify via sweep, and report summary debt (read-only).
     Audit(AuditArgs),
+    /// Close orphaned log debt: render summaries for orphaned logs.
+    Close(CloseCliArgs),
+    /// Install systemd timer and SessionStart hook for automated close.
+    Boot {
+        #[command(subcommand)]
+        subcmd: BootSubcommand,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum BootSubcommand {
+    /// Print the SessionStart hook entry and optionally install systemd units.
+    Install(BootInstallCliArgs),
+}
+
+#[derive(clap::Args, Debug)]
+struct CloseCliArgs {
+    /// Actually render orphaned logs (default: print-only).
+    #[arg(long)]
+    apply: bool,
+
+    /// Cap renders per invocation.
+    #[arg(long)]
+    limit: Option<usize>,
+
+    /// Emit JSON summary instead of human-readable text.
+    #[arg(long)]
+    json: bool,
+
+    /// Override the sessions directory from config.
+    #[arg(long)]
+    sessions_dir: Option<PathBuf>,
+}
+
+#[derive(clap::Args, Debug)]
+struct BootInstallCliArgs {
+    /// Copy unit files to ~/.config/systemd/user/ and run daemon-reload.
+    #[arg(long)]
+    enable: bool,
 }
 
 #[derive(clap::Args, Debug)]
@@ -92,6 +136,8 @@ fn main() -> ExitCode {
     match cli.command {
         Commands::Plan(args) => run_plan(args),
         Commands::Audit(args) => run_audit(args),
+        Commands::Close(args) => dispatch_close(args),
+        Commands::Boot { subcmd } => dispatch_boot(subcmd),
     }
 }
 
@@ -364,5 +410,61 @@ fn print_json(plan: &coda::SweepPlan) {
     match serde_json::to_string_pretty(plan) {
         Ok(json) => println!("{json}"),
         Err(e) => eprintln!("coda: JSON serialization error: {e}"),
+    }
+}
+
+fn dispatch_close(args: CloseCliArgs) -> ExitCode {
+    let cfg = match CodaConfig::load_default() {
+        Ok(c) => c,
+        Err(e) => {
+            #[allow(clippy::print_stderr)]
+            {
+                eprintln!("coda: config error: {e}");
+            }
+            return ExitCode::from(2);
+        }
+    };
+
+    let close_args = CloseArgs {
+        apply: args.apply,
+        limit: args.limit,
+        json: args.json,
+        sessions_dir: args.sessions_dir,
+        render_cmd: None,
+    };
+
+    match run_close(&close_args, &cfg) {
+        Ok(summary) => {
+            if summary.remaining > 0 || summary.failed > 0 {
+                ExitCode::from(1)
+            } else {
+                ExitCode::SUCCESS
+            }
+        }
+        Err(e) => {
+            #[allow(clippy::print_stderr)]
+            {
+                eprintln!("coda close: {e}");
+            }
+            ExitCode::from(2)
+        }
+    }
+}
+
+fn dispatch_boot(subcmd: BootSubcommand) -> ExitCode {
+    match subcmd {
+        BootSubcommand::Install(args) => {
+            let boot_args = BootInstallArgs { enable: args.enable };
+            match run_boot_install(&boot_args) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    #[allow(clippy::print_stderr)]
+                    {
+                        eprintln!("coda boot: {e}");
+                    }
+                    ExitCode::from(2)
+                }
+            }
+        }
     }
 }

@@ -1,0 +1,7 @@
+[Unit]
+Description=Close coda summary debt
+After=default.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/coda close --apply --limit 200
